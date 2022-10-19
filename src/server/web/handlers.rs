@@ -572,13 +572,7 @@ mod test {
             .with_method("GET".to_string())
             .with_body("test".to_string());
 
-        let res = MockServerHttpResponse {
-            body: None,
-            delay: None,
-            status: Some(418),
-            headers: None,
-        };
-
+        let res = MockServerHttpResponse::new().with_status(Some(418));
         let smr = MockDefinition::new(req, res);
 
         // Act
@@ -599,13 +593,7 @@ mod test {
     fn validate_mock_definition_no_path() {
         // Arrange
         let req = RequestRequirements::new();
-        let res = MockServerHttpResponse {
-            body: None,
-            delay: None,
-            status: Some(418),
-            headers: None,
-        };
-
+        let res = MockServerHttpResponse::new().with_status(Some(418));
         let smr = MockDefinition::new(req, res);
 
         // Act
@@ -624,13 +612,7 @@ mod test {
         req.method = Some("GET".into());
         req.body = Some("body".into());
 
-        let res = MockServerHttpResponse {
-            body: None,
-            delay: None,
-            status: Some(200),
-            headers: None,
-        };
-
+        let res = MockServerHttpResponse::new().with_status(Some(200));
         let mock_def = MockDefinition::new(req, res);
 
         // Act

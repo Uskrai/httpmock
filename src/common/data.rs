@@ -69,6 +69,26 @@ impl MockServerHttpResponse {
             delay: None,
         }
     }
+
+    pub fn with_status(mut self, status: Option<u16>) -> Self {
+        self.status = status;
+        self
+    }
+
+    pub fn with_headers(mut self, headers: Option<Vec<(String, String)>>) -> Self {
+        self.headers = headers;
+        self
+    }
+
+    pub fn with_delay(mut self, delay: Option<Duration>) -> Self {
+        self.delay = delay;
+        self
+    }
+
+    pub fn with_body_bytes(mut self, body: Option<Vec<u8>>) -> Self {
+        self.body = body;
+        self
+    }
 }
 
 impl Default for MockServerHttpResponse {

@@ -127,12 +127,11 @@ fn map_to_mock_definition(yaml_definition: YAMLMockDefinition) -> MockDefinition
             x_www_form_urlencoded_key_exists: yaml_definition.when.x_www_form_urlencoded_key_exists,
             matchers: None,
         },
-        response: MockServerHttpResponse {
-            status: yaml_definition.then.status,
-            headers: to_pair_vec(yaml_definition.then.header),
-            body: yaml_definition.then.body.map(|b| b.into_bytes()),
-            delay: yaml_definition.then.delay.map(|v| Duration::from_millis(v)),
-        },
+        response: MockServerHttpResponse::new()
+            .with_status(yaml_definition.then.status)
+            .with_headers(to_pair_vec(yaml_definition.then.header))
+            .with_body_bytes(yaml_definition.then.body.map(|b| b.into_bytes()))
+            .with_delay(yaml_definition.then.delay.map(|v| Duration::from_millis(v))),
     }
 }
 
