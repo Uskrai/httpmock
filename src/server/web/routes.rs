@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::common::data::{
-    ErrorResponse, HttpMockRequest, MockDefinition, MockRef, MockServerHttpResponse,
+    BodyResponse, ErrorResponse, HttpMockRequest, MockDefinition, MockRef, MockServerHttpResponse,
     RequestRequirements,
 };
 use crate::server::web::handlers;
@@ -140,13 +140,13 @@ where
     let mut headers = headers.unwrap_or_default();
     headers.push(("content-type".to_string(), "application/json".to_string()));
 
-    create_response(status, Some(headers), Some(body.unwrap()))
+    create_response(status, Some(headers), Some(body.unwrap().into()))
 }
 
 fn create_response(
     status: u16,
     headers: Option<Vec<(String, String)>>,
-    body: Option<Vec<u8>>,
+    body: Option<BodyResponse>,
 ) -> Result<ServerResponse, String> {
     let headers = headers.unwrap_or_default();
     let body = body.unwrap_or_default();

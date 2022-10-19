@@ -844,7 +844,55 @@ impl Then {
     /// ```
     pub fn body(mut self, body: impl AsRef<[u8]>) -> Self {
         update_cell(&self.response_template, |r| {
-            r.body = Some(body.as_ref().to_vec());
+            r.body = Some(body.as_ref().to_vec().into());
+        });
+        self
+    }
+
+    #[cfg_attr(
+        feature = "stream",
+        doc = r##"
+        Sets the HTTP response body that will be returned by the mock server using async stream.
+
+        * `body` - The response body content.
+
+        ## Example:
+        ```
+        use httpmock::prelude::*;
+        use isahc::{prelude::*, ResponseExt};
+        use futures_util as futures;
+
+        // Arrange
+        let server = MockServer::start();
+
+        let m = server.mock(|when, then| {
+            when.path("/hello");
+            then.status(200)
+                .body_stream(|| futures::stream::once(async { Ok("ohi!") }));
+        });
+
+        // Act
+        let mut response = isahc::get(server.url("/hello")).unwrap();
+
+        // Assert
+        m.assert();
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.text().unwrap(), "ohi!");
+        ```
+    "##
+    )]
+    #[cfg(feature = "stream")]
+    pub fn body_stream<F, S, V>(mut self, body: F) -> Self
+    where
+        F: Fn() -> S + Send + Sync + 'static,
+        S: futures_util::Stream<Item = Result<V, Box<dyn std::error::Error + Send + Sync>>>
+            + Send
+            + Sync
+            + 'static,
+        V: Into<Vec<u8>>,
+    {
+        update_cell(&self.response_template, |r| {
+            r.body = Some(body.into());
         });
         self
     }
@@ -933,10 +981,7 @@ impl Then {
     /// assert_eq!(user.as_object().unwrap().get("name").unwrap(), "Hans");
     /// ```
     pub fn json_body<V: Into<Value>>(mut self, body: V) -> Self {
-        update_cell(&self.response_template, |r| {
-            r.body = Some(body.into().to_string().into_bytes());
-        });
-        self
+        self.body(body.into().to_string().into_bytes())
     }
 
     /// Sets the JSON body that will be returned by the mock server.

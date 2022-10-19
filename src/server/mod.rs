@@ -22,7 +22,7 @@ use regex::Regex;
 use matchers::generic::SingleValueMatcher;
 use matchers::targets::{JSONBodyTarget, StringBodyTarget};
 
-use crate::common::data::{ActiveMock, HttpMockRequest, Tokenizer};
+use crate::common::data::{ActiveMock, HttpMockRequest, Tokenizer, BodyResponse};
 use crate::server::matchers::comparators::{
     AnyValueComparator, FunctionMatchesRequestComparator, JSONContainsMatchComparator,
     JSONExactMatchComparator, StringContainsMatchComparator, StringExactMatchComparator,
@@ -347,11 +347,11 @@ impl ServerRequestHeader {
 pub(crate) struct ServerResponse {
     pub status: u16,
     pub headers: Vec<(String, String)>,
-    pub body: Vec<u8>,
+    pub body: BodyResponse,
 }
 
 impl ServerResponse {
-    pub fn new(status: u16, headers: Vec<(String, String)>, body: Vec<u8>) -> Self {
+    pub fn new(status: u16, headers: Vec<(String, String)>, body: BodyResponse) -> Self {
         Self {
             status,
             headers,
@@ -725,7 +725,7 @@ mod test {
         headers.push((";;;".to_string(), ";;;".to_string()));
 
         let res = ServerResponse {
-            body: Vec::new(),
+            body: Vec::new().into(),
             status: 500,
             headers,
         };

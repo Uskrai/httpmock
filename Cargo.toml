@@ -55,7 +55,11 @@ default = ["cookies"]
 standalone = ["clap", "env_logger", "serde_yaml"]
 color = ["colored"]
 cookies = ["basic-cookies"]
+stream = ["hyper/stream"]
 
 [[bin]]
 name = "httpmock"
 required-features = ["standalone"]
+
+[package.metadata.docs.rs]
+all-features = true

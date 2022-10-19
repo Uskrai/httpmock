@@ -55,8 +55,7 @@ impl HttpMockRequest {
 pub struct MockServerHttpResponse {
     pub status: Option<u16>,
     pub headers: Option<Vec<(String, String)>>,
-    #[serde(default, with = "opt_vector_serde_base64")]
-    pub body: Option<Vec<u8>>,
+    pub body: Option<BodyResponse>,
     pub delay: Option<Duration>,
 }
 
@@ -86,14 +85,114 @@ impl MockServerHttpResponse {
     }
 
     pub fn with_body_bytes(mut self, body: Option<Vec<u8>>) -> Self {
-        self.body = body;
+        self.body = body.map(|it| BodyResponse::Bytes(it));
         self
+    }
+
+    #[cfg(feature = "stream")]
+    pub fn with_body_stream<F, S>(mut self, body: Option<F>)
+    where
+        F: Fn() -> S + Send + Sync + 'static,
+        S: futures_util::Stream<Item = Result<Vec<u8>, BoxedError>> + Send + Sync + 'static,
+    {
+        self.body = body.map(|it| {
+            BodyResponse::Func(Arc::new(move || {
+                let it = it();
+
+                Box::pin(it)
+            }))
+        });
     }
 }
 
 impl Default for MockServerHttpResponse {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Prints the response body as UTF8 string
+impl fmt::Debug for MockServerHttpResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MockServerHttpResponse")
+            .field("status", &self.status)
+            .field("headers", &self.headers)
+            .field("body", &self.body)
+            .field("delay", &self.delay)
+            .finish()
+    }
+}
+
+#[cfg(feature = "stream")]
+pub type BoxedError = Box<dyn std::error::Error + Send + Sync>;
+#[cfg(feature = "stream")]
+pub type BoxedStream =
+    std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<Vec<u8>, BoxedError>> + Send>>;
+
+#[derive(Deserialize, Serialize, Clone)]
+pub enum BodyResponse {
+    #[serde(with = "opt_vector_serde_base64")]
+    Bytes(Vec<u8>),
+    #[cfg(feature = "stream")]
+    #[serde(skip)]
+    Func(std::sync::Arc<dyn Fn() -> BoxedStream + Send + Sync>),
+}
+
+impl Default for BodyResponse {
+    fn default() -> Self {
+        Self::Bytes(Default::default())
+    }
+}
+
+impl From<Vec<u8>> for BodyResponse {
+    fn from(v: Vec<u8>) -> Self {
+        Self::Bytes(v)
+    }
+}
+
+impl<F, S, V> From<F> for BodyResponse
+where
+    F: Fn() -> S + Send + Sync + 'static,
+    S: futures_util::Stream<Item = Result<V, BoxedError>> + Send + Sync + 'static,
+    V: Into<Vec<u8>>,
+{
+    fn from(v: F) -> Self {
+        Self::Func(Arc::new(move || {
+            use futures_util::StreamExt;
+            let it = v().map(|it| it.map(|it| it.into()));
+
+            Box::pin(it)
+        }))
+    }
+}
+
+impl Debug for BodyResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let string = match self {
+            BodyResponse::Bytes(x) => String::from_utf8_lossy(x.as_ref()).to_string(),
+            #[cfg(feature = "stream")]
+            BodyResponse::Func(..) => String::from("<stream>"),
+        };
+
+        write!(f, "{}", string)
+    }
+}
+
+impl From<BodyResponse> for hyper::Body {
+    fn from(v: BodyResponse) -> Self {
+        match v {
+            BodyResponse::Bytes(it) => hyper::Body::from(it),
+            #[cfg(feature = "stream")]
+            BodyResponse::Func(it) => {
+                let mut stream = it();
+
+                use futures_util::StreamExt;
+
+                let stream = stream.map(|it| it.map(|it| hyper::body::Bytes::from(it)));
+
+                hyper::Body::wrap_stream(stream)
+            }
+        }
     }
 }
 
@@ -104,28 +203,25 @@ mod opt_vector_serde_base64 {
     // See the following references:
     // https://github.com/serde-rs/serde/blob/master/serde/src/ser/impls.rs#L99
     // https://github.com/serde-rs/serde/issues/661
-    pub fn serialize<T, S>(bytes: &Option<T>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<T, S>(bytes: &T, serializer: S) -> Result<S::Ok, S::Error>
     where
         T: AsRef<[u8]>,
         S: Serializer,
     {
-        match bytes {
-            Some(ref value) => serializer.serialize_bytes(base64::encode(value).as_bytes()),
-            None => serializer.serialize_none(),
-        }
+        serializer.serialize_bytes(base64::encode(bytes).as_bytes())
     }
 
     // See the following references:
     // https://github.com/serde-rs/serde/issues/1444
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Vec<u8>>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         struct Wrapper(#[serde(deserialize_with = "from_base64")] Vec<u8>);
 
-        let v = Option::deserialize(deserializer)?;
-        Ok(v.map(|Wrapper(a)| a))
+        let Wrapper(v) = Wrapper::deserialize(deserializer)?;
+        Ok(v)
     }
 
     fn from_base64<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
@@ -134,24 +230,6 @@ mod opt_vector_serde_base64 {
     {
         let vec = Vec::deserialize(deserializer)?;
         base64::decode(vec).map_err(serde::de::Error::custom)
-    }
-}
-
-/// Prints the response body as UTF8 string
-impl fmt::Debug for MockServerHttpResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MockServerHttpResponse")
-            .field("status", &self.status)
-            .field("headers", &self.headers)
-            .field(
-                "body",
-                &self
-                    .body
-                    .as_ref()
-                    .map(|x| String::from_utf8_lossy(x.as_ref()).to_string()),
-            )
-            .field("delay", &self.delay)
-            .finish()
     }
 }
 
